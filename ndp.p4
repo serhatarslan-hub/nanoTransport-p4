@@ -9,8 +9,8 @@
 
 #define INITIAL_TTL 64
 
-const bit<16> TYPE_IPV4 = 0x800;
-const bit<8> TYPE_NDP = 0x999; // TODO: Determine NDP type indentifier
+const bit<16> TYPE_IPV4 = 0x0800;
+const bit<8> TYPE_NDP = 0x88F7; // TODO: Determine NDP type indentifier
 
 const bit<16> NDP_FLAG_DATA               = 0x001;
 const bit<16> NDP_FLAG_ACK                = 0x002;
@@ -70,7 +70,8 @@ header ndp_t {
 }
 
 /*
- * Segment header is used to send segments (worth of multiple packets) from CPU to NIC
+ * Segment header is used to send segments (worth of multiple packets) from
+ * CPU to NIC
  */
 header segment_t {
   ip4Addr_t srcAddr;
@@ -188,6 +189,7 @@ control MyIngress(inout headers hdr,
    */
   register<bitmap_t>(MAX_NUM_FLOWS) delvrd_packetizer;
   register<bitmap_t>(MAX_NUM_FLOWS) delvrd_pipeline;
+  register<bitmap_t>(MAX_NUM_FLOWS) delvrd_scheduler;
 
   // TODO: There needs to be rtc_cnt register array as well to
   //       cancel transmission after certain number of retries
@@ -201,19 +203,19 @@ control MyIngress(inout headers hdr,
   register<bit<32>>(MAX_NUM_FLOWS) pullOffset_scheduler;
 
   /*
-   * Register arrays below are to be synchronized on bitmapHeadSeq_cheduler
+   * Register arrays below are to be synchronized on bitmapHeadSeq_scheduler
    * as a single multi-event register.
    */
   register<bit<32>>(MAX_NUM_FLOWS) bitmapHeadSeq_packetizer;
   register<bit<32>>(MAX_NUM_FLOWS) bitmapHeadSeq_pipeline;
-  register<bit<32>>(MAX_NUM_FLOWS) bitmapHeadSeq_cheduler;
+  register<bit<32>>(MAX_NUM_FLOWS) bitmapHeadSeq_scheduler;
 
-  /*
-   * Register arrays below are to be synchronized on msgLen_pipeline
-   * as a single multi-event register.
-   */
-  register<bit<32>>(MAX_NUM_FLOWS) msgLen_packetizer;
-  register<bit<32>>(MAX_NUM_FLOWS) msgLen_pipeline;
+  // /*
+  //  * Register arrays below are to be synchronized on msgLen_pipeline
+  //  * as a single multi-event register.
+  //  */
+  // register<bit<32>>(MAX_NUM_FLOWS) msgLen_packetizer;
+  // register<bit<32>>(MAX_NUM_FLOWS) msgLen_pipeline;
 
   action set_flow_idx(bit<INDEX_SIZE> flow_indx){
     metadata.flow_idx = flow_idx;
@@ -251,7 +253,7 @@ control MyIngress(inout headers hdr,
     delvrd_packetizer.write(metadata.flow_indx, 0 ); // all zeros
     pullOffset_packetizer.write(metadata.flow_indx, MAX_MSG_LEN_PKTS);
     bitmapHeadSeq_packetizer.write(metadata.flow_indx, hdr.segment.sequence_number);
-    msgLen_packetizer.write(metadata.flow_indx, hdr.segment.tot_msg_len);
+    // msgLen_packetizer.write(metadata.flow_indx, hdr.segment.tot_msg_len);
   }
 
   action get_pkt_idx() {
@@ -296,11 +298,18 @@ control MyIngress(inout headers hdr,
       delvrd_pipeline.write(metadata.flow_indx, cur_delvrd);
     }
 
-    // TODO: Delete the timer corresponding to this packet!
+    if (cur_delvrd == (bit<MAX_MSG_LEN_PKTS>)(-1)){
+      // TODO: Delete all state regarding that flow
+      //       Push the message to the CPU
 
-    // TODO: We can immediately delete the corresponding data packet from the
-    //       message buffer. Or we can wait until all delvrd_scheduler bits
-    //       are set
+    } else {
+      // TODO: Delete the timer corresponding to this packet!
+
+      // TODO: We can immediately delete the corresponding data packet from the
+      //       message buffer. Or we can wait until all delvrd_scheduler bits
+      //       are set
+    }
+
   }
 
   action pull_rcvd(){
@@ -310,8 +319,9 @@ control MyIngress(inout headers hdr,
       pullOffset_pipeline.read(cur_pullOffset, metadata.flow_indx);
       if (hdr.ndp.sequence_number > cur_pullOffset) {
         cur_pullOffset = hdr.ndp.sequence_number;
+        pullOffset_pipeline.write(metadata.flow_indx, cur_pullOffset);
       }
-      pullOffset_pipeline.write(metadata.flow_indx, cur_pullOffset);
+
     }
 
   }
@@ -341,6 +351,7 @@ control MyIngress(inout headers hdr,
   action data_rcvd() {
 
     // TODO: Store the payload into the corresponding message buffer slot
+
     bitmap_t cur_delvrd;
     @atomic {
       delvrd_pipeline.read(cur_delvrd, metadata.flow_indx);
@@ -377,7 +388,7 @@ control MyIngress(inout headers hdr,
     // TODO: Generate a PULL packet and push to the pacer
     sume_gen_pkt(64); // Exemplary extern call for packet generation.
                       // This generated packet will be recirculated, so we can
-                      // process it before sending out.
+                      // process it, if need be, before sending out.
 
   }
 
@@ -405,7 +416,7 @@ control MyIngress(inout headers hdr,
   action syn_rcvd() {
     ;
     // TODO: Create new flow entry on get_flow_idx table, and allocate buffer
-    //       data and state.
+    //       data and state. (?)
   }
 
   table packet_handling {
@@ -523,11 +534,11 @@ control MyComputeChecksum(inout headers hdr, inout metadata meta) {
 
 control MyDeparser(packet_out packet, in headers hdr) {
   apply {
-    if (hdr.ethernet.isValid()) {
-      packet.emit(hdr.ethernet);
-    }
-    packet.emit(hdr.ipv4);
-    packet.emit(hdr.ndp);
+    // if (hdr.ethernet.isValid()) {
+    //   packet.emit(hdr.ethernet);
+    // }
+    // packet.emit(hdr.ipv4);
+    // packet.emit(hdr.ndp);
   }
 }
 
