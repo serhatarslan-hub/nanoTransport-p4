@@ -73,7 +73,7 @@ header ndp_t {
  * Segment header is used to send segments (worth of multiple packets) from
  * CPU to NIC
  */
-header segment_t {
+header segment_t { // Context header
   ip4Addr_t srcAddr;
   ip4Addr_t dstAddr;
 
@@ -90,7 +90,7 @@ struct headers {
   ipv4_t      ipv4;
   ndp_t       ndp;
   segment_t   segment;
-}
+} // TODO: Define different header formats
 
 struct metadata {
   // The metadata below is required because source of the
@@ -118,6 +118,7 @@ parser MyParser(packet_in packet,
     transition select(standard_metadata.ingress_port){
       NETWORK_IN  :parse_ethernet;
       CPU_IN      :parse_segment; //message from CPU -> should be packetized
+      PKT_BUF_IN  :parse_ipv4;
       deafult     :accept;
     }
   }
@@ -246,7 +247,7 @@ control MyIngress(inout headers hdr,
     // TODO:
     //    Divide the segment payload into small packet payloads
     //    Add NDP and IPv4 headers to each packet payload
-    //    Store datagrams in the message ring buffer
+    //    Store datagrams in the message buffer
 
     /*    Initiallize all the metadata (bitmaps and variables etc.) */
     toBtx_packetizer.write(metadata.flow_indx, (bit<MAX_MSG_LEN_PKTS>)(-1) ); // all ones
@@ -298,7 +299,7 @@ control MyIngress(inout headers hdr,
       delvrd_pipeline.write(metadata.flow_indx, cur_delvrd);
     }
 
-    if (cur_delvrd == (bit<MAX_MSG_LEN_PKTS>)(-1)){
+    if (cur_delvrd == (bit<MAX_MSG_LEN_PKTS>)(-1)){ // NOTE: requires special instruction!!
       // TODO: Delete all state regarding that flow
       //       Push the message to the CPU
 
@@ -390,6 +391,11 @@ control MyIngress(inout headers hdr,
                       // This generated packet will be recirculated, so we can
                       // process it, if need be, before sending out.
 
+    if (cur_delvrd == (bit<MAX_MSG_LEN_PKTS>)(-1)){
+      // TODO: Delete all state regarding that flow
+      //       Push the message to the CPU
+
+    }
   }
 
   action chopped_rcvd() {
