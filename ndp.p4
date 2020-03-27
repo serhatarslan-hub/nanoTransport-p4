@@ -387,14 +387,18 @@ control MyIngress(inout headers hdr,
     standard_metadata.egress_spec = NETWORK_OUT;
 
     // TODO: Generate a PULL packet and push to the pacer
+    // NOTE: We can also replicate the Ack packet and turn into a Pull packet.
     sume_gen_pkt(64); // Exemplary extern call for packet generation.
                       // This generated packet will be recirculated, so we can
                       // process it, if need be, before sending out.
 
+    // NOTE: We can attach a queue_id to the packet, so that it is placed into
+    // a pacer queue which is resumed and paused for pacing behavior. This
+    // allows updating the rate of the pacer from the data plane.
+
     if (cur_delvrd == (bit<MAX_MSG_LEN_PKTS>)(-1)){
       // TODO: Delete all state regarding that flow
       //       Push the message to the CPU
-
     }
   }
 
@@ -423,6 +427,8 @@ control MyIngress(inout headers hdr,
     ;
     // TODO: Create new flow entry on get_flow_idx table, and allocate buffer
     //       data and state. (?)
+    // NOTE: You should be able to find a free flow_id in constant time.
+    // Can be fixed function but need to design interface (D-left, etc)
   }
 
   table packet_handling {
@@ -447,7 +453,7 @@ control MyIngress(inout headers hdr,
   }
 
   apply {
-    if (hdr.ethernet.isValid()) {
+    if (hdr.ethernet.isValid()) { // NOTE: Istead of validity check the incoming port
       metadata.srcAddr = hdr.ipv4.srcAddr;
       metadata.dstAddr = hdr.ipv4.dstAddr;
       metadata.src_port = hdr. ndp.src_port;
